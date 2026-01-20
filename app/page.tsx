@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { MapPin, Navigation, Loader2, Crosshair } from 'lucide-react';
-import { getRecommendation, mockReverseGeocode, Recommendation } from '../lib/mockData';
+import { mockReverseGeocode, Recommendation } from '../lib/mockData';
+import { fetchRoutes } from '../lib/api'; // API 함수 임포트
 import ComparisonCard from '../components/ComparisonCard';
 import BottomNav from '../components/BottomNav';
 import ThemeToggle from '../components/ThemeToggle';
+import Toast from '../components/Toast'; // Toast 임포트
 
-// 간단한 로컬스토리지 훅 (컴포넌트 내부에 배치하여 파일 복잡도 감소)
+// 간단한 로컬스토리지 훅
 function useLocalStorage<T>(key: string, initialValue: T) {
   const [storedValue, setStoredValue] = useState<T>(initialValue);
 
@@ -49,10 +51,19 @@ export default function Home() {
   const [result, setResult] = useState<Recommendation | null>(null);
   const [history, setHistory] = useLocalStorage<HistoryItem[]>('waitstop-history', []);
 
+  // Toast 상태
+  const [toastMessage, setToastMessage] = useState('');
+  const [showToast, setShowToast] = useState(false);
+
+  // Toast 표시 함수
+  const triggerToast = (msg: string) => {
+    setToastMessage(msg);
+    setShowToast(true);
+  };
+
   // 현재 위치 가져오기 (가상)
   const handleCurrentLocation = () => {
     if ('geolocation' in navigator) {
-      // 로딩 표시 등을 추가하면 더 좋음
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
@@ -60,7 +71,6 @@ export default function Home() {
           setOrigin(address);
         },
         () => {
-          // 에러 시에도 가상 주소 입력
           setOrigin(mockReverseGeocode(37.5, 127.0));
         }
       );
@@ -69,36 +79,42 @@ export default function Home() {
     }
   };
 
-  const handleAnalyze = () => {
-    if (!destination) {
-      alert('목적지를 입력해주세요!');
+  const handleAnalyze = async () => {
+    // [Validation] 출발지 또는 목적지가 비어있으면 Toast 띄우기
+    if (!origin || !destination) {
+      triggerToast('출발지와 목적지를 모두 입력해 주세요');
       return;
     }
 
-    setIsLoading(true); // 로딩 시작
+    setIsLoading(true);
+    setResult(null); // 이전 결과 초기화
 
-    setTimeout(() => {
-      // 다크모드 여부 확인 (HTML 태그의 class 확인)
-      const isDarkMode = document.documentElement.classList.contains('dark');
-      const scenario = isDarkMode ? 'night' : 'day';
+    // 다크모드 여부 확인
+    const isDarkMode = document.documentElement.classList.contains('dark');
+    const scenario = isDarkMode ? 'night' : 'day';
 
-      const newRecommendation = getRecommendation(scenario);
-      setResult(newRecommendation);
-      setIsLoading(false); // 로딩 끝
+    try {
+      // [API] 실제 API 호출 함수 사용
+      const data = await fetchRoutes({ origin, destination, scenario });
+      setResult(data);
 
       // 히스토리 저장
       const newHistoryItem: HistoryItem = {
         id: Date.now(),
-        origin: origin || '내 위치', // 출발지 없으면 내 위치로 가정
+        origin: origin,
         destination: destination,
         date: new Date().toLocaleDateString(),
       };
-      setHistory([newHistoryItem, ...history].slice(0, 10)); // 최근 10개만 유지
+      setHistory([newHistoryItem, ...history].slice(0, 10));
 
-    }, 1500);
+    } catch (error) {
+      console.error(error);
+      triggerToast('경로를 불러오는 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // 렌더링: 홈 탭
   const renderHome = () => (
     <div className="flex flex-col h-full min-h-[calc(100vh-64px)] overflow-y-auto pb-20 no-scrollbar">
       {/* Header */}
@@ -121,14 +137,14 @@ export default function Home() {
             </div>
             <input
               type="text"
-              placeholder="출발지 (비워두면 내 위치)"
+              placeholder="출발지"
               className="w-full pl-10 pr-12 py-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 shadow-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
             />
             <button
               onClick={handleCurrentLocation}
-              className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors"
+              className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors p-2"
               aria-label="Use current location"
             >
               <Crosshair className="h-5 w-5" />
@@ -152,12 +168,13 @@ export default function Home() {
           <button
             onClick={handleAnalyze}
             disabled={isLoading}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-70 disabled:active:scale-100"
+            // [Mobile UX] min-h-[50px] 적용
+            className="w-full min-h-[54px] bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-70 disabled:active:scale-100"
           >
             {isLoading ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span>최적 경로 찾는 중...</span>
+                <span>최적 경로를 분석 중입니다...</span>
               </>
             ) : (
               <>
@@ -175,8 +192,9 @@ export default function Home() {
               <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">
                 {result.scenario === 'day' ? '☀️ 추천 경로 (Day)' : '🌙 심야 솔루션 (Night)'}
               </h2>
-              <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
-                강남역 도착 기준
+              {/* [Dynamic Text] 목적지 텍스트 바인딩 */}
+              <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded max-w-[120px] truncate">
+                {destination} 도착 기준
               </span>
             </div>
 
@@ -192,10 +210,16 @@ export default function Home() {
           </section>
         )}
       </div>
+
+      {/* Toast Notification */}
+      <Toast
+        message={toastMessage}
+        isVisible={showToast}
+        onClose={() => setShowToast(false)}
+      />
     </div>
   );
 
-  // 렌더링: 히스토리 탭
   const renderHistory = () => (
     <div className="flex flex-col h-full p-6">
       <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">검색 기록</h2>
@@ -222,7 +246,6 @@ export default function Home() {
     </div>
   );
 
-  // 렌더링: 마이페이지
   const renderMyPage = () => (
     <div className="flex flex-col h-full p-6">
       <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-8">내 정보</h2>
@@ -238,13 +261,13 @@ export default function Home() {
       </div>
 
       <div className="space-y-2">
-        <button className="w-full text-left p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors">
+        <button className="w-full text-left p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors min-h-[50px]">
           공지사항
         </button>
-        <button className="w-full text-left p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors">
+        <button className="w-full text-left p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors min-h-[50px]">
           자주 묻는 질문
         </button>
-        <button className="w-full text-left p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors">
+        <button className="w-full text-left p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors min-h-[50px]">
           설정
         </button>
       </div>
