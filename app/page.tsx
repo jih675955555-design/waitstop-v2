@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { MapPin, Navigation, Loader2, Crosshair, Sun, Moon } from 'lucide-react';
-import { mockReverseGeocode, Recommendation } from '../lib/mockData';
-import { fetchRoutes } from '../lib/api';
+import { Recommendation } from '../lib/mockData';
+import { fetchRoutes, getReverseGeo } from '../lib/api';
 import ComparisonCard from '../components/ComparisonCard';
 import BottomNav from '../components/BottomNav';
 import Toast from '../components/Toast';
@@ -87,17 +87,23 @@ export default function Home() {
   const handleCurrentLocation = () => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
           const { latitude, longitude } = position.coords;
-          const address = mockReverseGeocode(latitude, longitude);
-          setOrigin(address);
+          try {
+            const address = await getReverseGeo(latitude, longitude);
+            setOrigin(address);
+          } catch (error) {
+            console.error(error);
+            setOrigin("현 위치를 찾을 수 없음");
+          }
         },
-        () => {
-          setOrigin(mockReverseGeocode(37.5, 127.0));
+        async () => {
+          const address = await getReverseGeo(37.5665, 126.9780); // Default: Seoul City Hall
+          setOrigin(address);
         }
       );
     } else {
-      setOrigin(mockReverseGeocode(37.5, 127.0));
+      getReverseGeo(37.5665, 126.9780).then(setOrigin);
     }
   };
 
@@ -161,8 +167,8 @@ export default function Home() {
               type="text"
               placeholder="출발지"
               className={`w-full pl-10 pr-12 py-3.5 rounded-xl border shadow-sm transition-all outline-none ${isNight
-                  ? 'border-gray-800 bg-gray-900 text-white placeholder-gray-400 focus:ring-2 focus:ring-violet-500'
-                  : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
+                ? 'border-gray-800 bg-gray-900 text-white placeholder-gray-400 focus:ring-2 focus:ring-violet-500'
+                : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
                 }`}
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
@@ -184,8 +190,8 @@ export default function Home() {
               type="text"
               placeholder="어디로 가시나요?"
               className={`w-full pl-10 pr-4 py-3.5 rounded-xl border shadow-sm transition-all outline-none font-medium ${isNight
-                  ? 'border-gray-800 bg-gray-900 text-white placeholder-gray-400 focus:ring-2 focus:ring-violet-500'
-                  : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
+                ? 'border-gray-800 bg-gray-900 text-white placeholder-gray-400 focus:ring-2 focus:ring-violet-500'
+                : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
                 }`}
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
@@ -197,8 +203,8 @@ export default function Home() {
             onClick={handleAnalyze}
             disabled={isLoading}
             className={`w-full min-h-[54px] text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-70 disabled:active:scale-100 ${isNight
-                ? 'bg-violet-600 hover:bg-violet-700'
-                : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
+              ? 'bg-violet-600 hover:bg-violet-700'
+              : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
               }`}
           >
             {isLoading ? (
@@ -259,8 +265,8 @@ export default function Home() {
         <ul className="space-y-3">
           {history.map((item) => (
             <li key={item.id} className={`p-4 rounded-xl border shadow-sm flex justify-between items-center transition-colors ${isNight
-                ? 'bg-[#1F2937] border-gray-800'
-                : 'bg-white border-gray-100'
+              ? 'bg-[#1F2937] border-gray-800'
+              : 'bg-white border-gray-100'
               }`}>
               <div>
                 <div className={`flex items-center gap-2 text-sm mb-1 ${isNight ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -299,8 +305,8 @@ export default function Home() {
           { label: '설정' }
         ].map((btn, idx) => (
           <button key={idx} className={`w-full text-left p-4 rounded-xl transition-colors border min-h-[54px] font-medium ${isNight
-              ? 'hover:bg-gray-900 text-gray-300 bg-black border-gray-900'
-              : 'hover:bg-gray-50 text-gray-600 bg-white border-transparent'
+            ? 'hover:bg-gray-900 text-gray-300 bg-black border-gray-900'
+            : 'hover:bg-gray-50 text-gray-600 bg-white border-transparent'
             }`}>
             {btn.label}
           </button>
