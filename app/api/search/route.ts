@@ -116,7 +116,7 @@ export async function POST(req: Request) {
         console.error("[API] Taxi Check Failed:", e);
         return null;
       }),
-      fetchODSay('searchPubTransPathT', {
+      fetchODSay('searchPubTransPath', {
         SX: startObj.lon,
         SY: startObj.lat,
         EX: endObj.lon,
