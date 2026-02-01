@@ -210,7 +210,7 @@ export default function Home() {
             {isLoading ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span>최적 경로를 분석 중입니다...</span>
+                <span>최적의 환승 점프 지점 분석 중...</span>
               </>
             ) : (
               <>
