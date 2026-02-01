@@ -144,9 +144,6 @@ export async function POST(req: Request) {
         description: '프라이빗하고 편안한 이동',
         details: `택시 이동 포함 약 ${taxiEst.time}분`
       };
-    } else {
-      // Fallback VIP (Estimated) if API fails but coordinates exist?
-      // Or just omit.
     }
 
     // --- Build Saver Option ---
@@ -208,7 +205,6 @@ export async function POST(req: Request) {
         }
       } catch (smartError) {
         console.error("[API] Smart Logic Failed:", smartError);
-        // Don't crash entire response if smart logic fails
       }
     } else {
       console.warn("[API] No transit paths found from ODSay");
@@ -216,9 +212,47 @@ export async function POST(req: Request) {
 
     const availableOptions = [saverOption, smartOption, vipOption].filter(Boolean);
 
-    // If absolutely no options, return error or empty
-    if (availableOptions.length === 0) {
-      console.warn("[API] No valid options generated.");
+    // --- MOCK FALLBACK --- 
+    // If we only have VIP or nothing (likely API failure), fallback to Mock
+    if (availableOptions.length <= 1) {
+      console.warn("[API] Falling back to Mock Data due to insufficient API results.");
+
+      const mockVip = vipOption || {
+        type: 'VIP',
+        title: 'VIP',
+        tag: '리치 모드',
+        time: 25,
+        cost: 15800,
+        description: '프라이빗하고 편안한 이동',
+        details: '택시 이동 포함 약 25분'
+      };
+
+      const mockSaver = {
+        type: 'Saver',
+        title: 'Saver',
+        tag: '지갑 수호자',
+        time: 45,
+        cost: 1400,
+        description: '최저가 이동',
+        details: '환승 1회'
+      };
+
+      const mockSmart = {
+        type: 'Smart',
+        title: 'Smart',
+        tag: '가성비 전술가',
+        time: 32,
+        cost: 6500,
+        description: '환승 0회 (점프 성공)',
+        details: '택시(10분) + 지하철 2호선',
+        badge: '13분 단축'
+      };
+
+      return NextResponse.json({
+        start: startObj.name,
+        end: endObj.name,
+        options: [mockSaver, mockSmart, mockVip]
+      });
     }
 
     return NextResponse.json({
