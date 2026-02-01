@@ -48,7 +48,14 @@ async function fetchODSay(endpoint: string, params: Record<string, string>) {
   url.searchParams.append('apiKey', ODSAY_KEY);
   Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
 
-  const res = await fetch(url.toString());
+  // ODSay WEB API requires a Referer matching the registered domain.
+  // We hardcode localhost or use the env URL.
+  const res = await fetch(url.toString(), {
+    headers: {
+      'Referer': process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+    }
+  });
+
   if (!res.ok) {
     console.error(`ODSay Error (${endpoint}): ${res.status}`);
     return null;
