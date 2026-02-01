@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 
 // API Keys
 const TMAP_KEY = process.env.NEXT_PUBLIC_WAITSTOP_API_KEY || process.env.NEXT_PUBLIC_TMAP_API_KEY || '';
-const ODSAY_KEY = process.env.NEXT_PUBLIC_ODSAY_API_KEY || '';
 
 // Types
 type RouteRequest = {
@@ -32,7 +31,7 @@ async function fetchTMap(endpoint: string, params: Record<string, any>, method =
   const res = await fetch(url.toString(), options);
   if (!res.ok) {
     if (res.status === 429) {
-      console.warn("TMAP API Rate Limit Exceeded"); // Handle gracefully if needed
+      console.warn("TMAP API Rate Limit Exceeded");
       return null;
     }
     const text = await res.text();
@@ -42,28 +41,7 @@ async function fetchTMap(endpoint: string, params: Record<string, any>, method =
   return res.json();
 }
 
-// 2. ODSay API Helper
-async function fetchODSay(endpoint: string, params: Record<string, string>) {
-  const url = new URL(`https://api.odsay.com/v1/api/${endpoint}`);
-  url.searchParams.append('apiKey', ODSAY_KEY);
-  Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
-
-  // ODSay WEB API requires a Referer matching the registered domain.
-  // We hardcode localhost or use the env URL.
-  const res = await fetch(url.toString(), {
-    headers: {
-      'Referer': process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
-    }
-  });
-
-  if (!res.ok) {
-    console.error(`ODSay Error (${endpoint}): ${res.status}`);
-    return null;
-  }
-  return res.json();
-}
-
-// 3. Geocoding (Text -> Lat/Lon)
+// 2. Geocoding (Text -> Lat/Lon)
 async function getCoordinates(keyword: string) {
   const data = await fetchTMap('https://apis.openapi.sk.com/tmap/pois', {
     version: '1',
@@ -75,21 +53,21 @@ async function getCoordinates(keyword: string) {
   return null;
 }
 
-// 4. Taxi Route Calculation (Time & Cost)
+// 3. Taxi Route Calculation (Time & Cost)
 async function getTaxiEstimate(start: { lat: string, lon: string }, end: { lat: string, lon: string }) {
   const body = {
     startX: start.lon,
     startY: start.lat,
     endX: end.lon,
     endY: end.lat,
-    totalValue: 2 // Request toll/fuel/taxi info
+    totalValue: 2
   };
   const data = await fetchTMap('https://apis.openapi.sk.com/tmap/routes?version=1', {}, 'POST', body);
 
   if (data && data.features?.[0]?.properties) {
     const props = data.features[0].properties;
     return {
-      time: Math.round(props.totalTime / 60), // minutes
+      time: Math.round(props.totalTime / 60),
       cost: props.taxiFare || 0,
       distance: props.totalDistance
     };
@@ -115,162 +93,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Location not found' }, { status: 404 });
     }
 
-    // 0. Determine Dynamic Referer for ODSay/TMap Auth
-    const host = req.headers.get('host') || 'localhost:3000';
-    const protocol = req.headers.get('x-forwarded-proto') || 'http';
-    const currentReferer = `${protocol}://${host}`; // e.g. "https://waitstop-v2.vercel.app" or "http://localhost:3000"
+    console.log(`[API] Route: ${startObj.name} -> ${endObj.name}`);
 
-    console.log(`[API] Searching Route: ${startObj.name} -> ${endObj.name} (Ref: ${currentReferer})`);
+    // 2. 택시 예상 정보 가져오기
+    const taxiEst = await getTaxiEstimate(startObj, endObj).catch(e => {
+      console.error("[API] Taxi Check Failed:", e);
+      return null;
+    });
 
-    // 2. Parallel Processing: VIP (Taxi) & Saver (Transit)
-    const [taxiEst, transitData] = await Promise.all([
-      getTaxiEstimate(startObj, endObj).catch(e => {
-        console.error("[API] Taxi Check Failed:", e);
-        return null;
-      }),
-      fetchODSay('searchPubTransPath', {
-        SX: startObj.lon,
-        SY: startObj.lat,
-        EX: endObj.lon,
-        EY: endObj.lat,
-      }, currentReferer).catch(e => {
-        console.error("[API] ODSay Check Failed:", e);
-        return null;
-      })
-    ]);
-
-    // Debug Logs
     console.log("[API] Taxi Result:", taxiEst ? "Success" : "Failed");
-    console.log("[API] ODSay Result:", transitData ? (transitData.result ? "Success" : "No Result Data") : "Failed/Null",
-      transitData?.error ? JSON.stringify(transitData.error) : "");
 
-    // --- Build VIP Option ---
-    let vipOption = null;
-    if (taxiEst) {
-      vipOption = {
-        type: 'VIP',
-        title: 'VIP',
-        tag: '리치 모드',
-        time: taxiEst.time,
-        cost: taxiEst.cost,
-        description: '프라이빗하고 편안한 이동',
-        details: `택시 이동 포함 약 ${taxiEst.time}분`
-      };
-    }
-
-    // --- Build Saver Option ---
-    let saverOption = null;
-    let smartOption = null;
-
-    const paths = transitData?.result?.path;
-    if (paths && paths.length > 0) {
-      const bestPath = paths[0];
-      const totalTime = bestPath.info.totalTime;
-      const totalPayment = bestPath.info.payment;
-
-      saverOption = {
-        type: 'Saver',
-        title: 'Saver',
-        tag: '지갑 수호자',
-        time: totalTime,
-        cost: totalPayment,
-        description: '최저가 이동',
-        details: `환승 ${bestPath.info.busTransitCount + bestPath.info.subwayTransitCount}회`
-      };
-
-      // --- Build Smart Option (The "Jump" Logic) ---
-      try {
-        const subwaySegments = bestPath.subPath.filter((p: any) => p.trafficType === 1 || p.trafficType === 2);
-        const lastSubway = subwaySegments[subwaySegments.length - 1];
-
-        if (lastSubway) {
-          const mainStationLat = lastSubway.startY;
-          const mainStationLon = lastSubway.startX;
-
-          // Calculate Cost/Time for [Origin -> Main Station] by Taxi
-          const jumpTaxiEst = await getTaxiEstimate(startObj, { lat: String(mainStationLat), lon: String(mainStationLon) })
-            .catch(e => null);
-
-          if (jumpTaxiEst) {
-            let timeBeforeMain = 0;
-            for (const sub of bestPath.subPath) {
-              if (sub === lastSubway) break;
-              timeBeforeMain += sub.sectionTime;
-            }
-
-            const remainingTransitTime = totalTime - timeBeforeMain;
-            const smartTotalTime = jumpTaxiEst.time + remainingTransitTime;
-            // Base Transit Cost (approx) + Taxi Cost
-            const smartTransitCost = 1500;
-
-            smartOption = {
-              type: 'Smart',
-              title: 'Smart',
-              tag: '가성비 전술가',
-              time: smartTotalTime,
-              cost: jumpTaxiEst.cost + smartTransitCost,
-              description: `환승 ${bestPath.info.busTransitCount + bestPath.info.subwayTransitCount - 1}회 생략`,
-              details: `택시(${jumpTaxiEst.time}분) + ${lastSubway.lane[0].name}`,
-              badge: smartTotalTime < totalTime ? `${totalTime - smartTotalTime}분 단축` : undefined
-            };
-          }
-        }
-      } catch (smartError) {
-        console.error("[API] Smart Logic Failed:", smartError);
-      }
-    } else {
-      console.warn("[API] No transit paths found from ODSay");
-    }
-
-    const availableOptions = [saverOption, smartOption, vipOption].filter(Boolean);
-
-    // --- MOCK FALLBACK --- 
-    // If we only have VIP or nothing (likely API failure), fallback to Mock
-    if (availableOptions.length <= 1) {
-      console.warn("[API] Falling back to Mock Data due to insufficient API results.");
-
-      const mockVip = vipOption || {
-        type: 'VIP',
-        title: 'VIP',
-        tag: '리치 모드',
-        time: 25,
-        cost: 15800,
-        description: '프라이빗하고 편안한 이동',
-        details: '택시 이동 포함 약 25분'
-      };
-
-      const mockSaver = {
-        type: 'Saver',
-        title: 'Saver',
-        tag: '지갑 수호자',
-        time: 45,
-        cost: 1400,
-        description: '최저가 이동',
-        details: '환승 1회'
-      };
-
-      const mockSmart = {
-        type: 'Smart',
-        title: 'Smart',
-        tag: '가성비 전술가',
-        time: 32,
-        cost: 6500,
-        description: '환승 0회 (점프 성공)',
-        details: '택시(10분) + 지하철 2호선',
-        badge: '13분 단축'
-      };
-
-      return NextResponse.json({
-        start: startObj.name,
-        end: endObj.name,
-        options: [mockSaver, mockSmart, mockVip]
-      });
-    }
-
+    // 3. 좌표 + 택시 정보 반환 (ODSay는 클라이언트에서 호출)
     return NextResponse.json({
-      start: startObj.name,
-      end: endObj.name,
-      options: availableOptions
+      start: {
+        name: startObj.name,
+        lat: startObj.lat,
+        lon: startObj.lon
+      },
+      end: {
+        name: endObj.name,
+        lat: endObj.lat,
+        lon: endObj.lon
+      },
+      taxiEstimate: taxiEst
     });
 
   } catch (error) {
