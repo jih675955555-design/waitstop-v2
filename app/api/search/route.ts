@@ -78,7 +78,7 @@ async function getTaxiEstimate(start: { lat: string, lon: string }, end: { lat: 
     totalValue: 2 // Request toll/fuel/taxi info
   };
   const data = await fetchTMap('https://apis.openapi.sk.com/tmap/routes?version=1', {}, 'POST', body);
-  
+
   if (data && data.features?.[0]?.properties) {
     const props = data.features[0].properties;
     return {
@@ -108,27 +108,46 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Location not found' }, { status: 404 });
     }
 
+    console.log(`[API] Searching Route: ${startObj.name} -> ${endObj.name}`);
+
     // 2. Parallel Processing: VIP (Taxi) & Saver (Transit)
     const [taxiEst, transitData] = await Promise.all([
-      getTaxiEstimate(startObj, endObj),
+      getTaxiEstimate(startObj, endObj).catch(e => {
+        console.error("[API] Taxi Check Failed:", e);
+        return null;
+      }),
       fetchODSay('searchPubTransPathT', {
         SX: startObj.lon,
         SY: startObj.lat,
         EX: endObj.lon,
         EY: endObj.lat,
+      }).catch(e => {
+        console.error("[API] ODSay Check Failed:", e);
+        return null;
       })
     ]);
 
+    // Debug Logs
+    console.log("[API] Taxi Result:", taxiEst ? "Success" : "Failed");
+    console.log("[API] ODSay Result:", transitData ? (transitData.result ? "Success" : "No Result Data") : "Failed/Null",
+      transitData?.error ? JSON.stringify(transitData.error) : "");
+
     // --- Build VIP Option ---
-    const vipOption = {
-      type: 'VIP',
-      title: 'VIP',
-      tag: '리치 모드',
-      time: taxiEst?.time || 0,
-      cost: taxiEst?.cost || 0,
-      description: '프라이빗하고 편안한 이동',
-      details: taxiEst ? `택시 이동 포함 약 ${taxiEst.time}분` : '경로 정보 없음'
-    };
+    let vipOption = null;
+    if (taxiEst) {
+      vipOption = {
+        type: 'VIP',
+        title: 'VIP',
+        tag: '리치 모드',
+        time: taxiEst.time,
+        cost: taxiEst.cost,
+        description: '프라이빗하고 편안한 이동',
+        details: `택시 이동 포함 약 ${taxiEst.time}분`
+      };
+    } else {
+      // Fallback VIP (Estimated) if API fails but coordinates exist?
+      // Or just omit.
+    }
 
     // --- Build Saver Option ---
     let saverOption = null;
@@ -136,10 +155,10 @@ export async function POST(req: Request) {
 
     const paths = transitData?.result?.path;
     if (paths && paths.length > 0) {
-      const bestPath = paths[0]; // ODSay usually returns best path first
+      const bestPath = paths[0];
       const totalTime = bestPath.info.totalTime;
       const totalPayment = bestPath.info.payment;
-      
+
       saverOption = {
         type: 'Saver',
         title: 'Saver',
@@ -151,84 +170,61 @@ export async function POST(req: Request) {
       };
 
       // --- Build Smart Option (The "Jump" Logic) ---
-      // Strategy: Find a major subway line that goes DIRECTLY to destination (or close to it).
-      // Then find a station on that line that is ~10-15 mins away by tax from origin.
-      
-      // 1. Identify "Main Line"
-      // Look for the longest subway segment in the best path
-      const subwaySegments = bestPath.subPath.filter((p: any) => p.trafficType === 1 || p.trafficType === 2); // 1: Subway, 2: Bus (Focus on Subway for 'Jump' usually)
-      
-      // Simplified Logic: If the best path has transfers, try to skip the first leg(s) with a taxi.
-      // Let's iterate through the path from the END.
-      // Find the last subway line.
-      const lastSubway = subwaySegments[subwaySegments.length - 1]; // The subway that arrives at or near destination.
-      
-      if (lastSubway) {
-        // This subway line leads to destination (or close to it).
-        // We want to board this line EARLIER, skipping bus/transfer/walking from origin.
-        
-        // However, we need to find a station on this line that is close to origin by TAXI.
-        // ODSay doesn't give us ALL stations easily without another call.
-        // Heuristic:
-        // If the current transit path starts with [Walk -> Bus -> Subway...],
-        // The "Jump" is replacing [Walk -> Bus] with [Taxi -> Subway Station].
-        
-        // Let's identify the FIRST station of the MAIN subway leg.
-        const mainStationName = lastSubway.startName;
-        const mainStationLat = lastSubway.startY;
-        const mainStationLon = lastSubway.startX;
+      try {
+        const subwaySegments = bestPath.subPath.filter((p: any) => p.trafficType === 1 || p.trafficType === 2);
+        const lastSubway = subwaySegments[subwaySegments.length - 1];
 
-        // Calculate Cost/Time for [Origin -> Main Station] by Taxi
-        const jumpTaxiEst = await getTaxiEstimate(startObj, { lat: String(mainStationLat), lon: String(mainStationLon) });
+        if (lastSubway) {
+          const mainStationLat = lastSubway.startY;
+          const mainStationLon = lastSubway.startX;
 
-        if (jumpTaxiEst) {
-           // Smart Total Time = Taxi Time (to station) + Subway Time (station to dest) + Walk (dest)
-           // Approx Subway Time: access from ODSay segment info?
-           // The 'sectionTime' in ODSay subPath is for that segment.
-           // However, if we simply take the segment time, it might be accurate enough.
-           // But if the user takes taxi to that station, they might skip earlier segments.
-           
-           // Time = JumpTaxiTime + RemainingTransitTime (from that station)
-           // We can approx RemainingTransitTime = TotalTransitTime - TimeSpentBeforeMainStation
-           
-           // Calculate time spent BEFORE the main station in the original path
-           let timeBeforeMain = 0;
-           for (const sub of bestPath.subPath) {
-             if (sub === lastSubway) break;
-             timeBeforeMain += sub.sectionTime;
-           }
-           
-           const remainingTransitTime = totalTime - timeBeforeMain;
-           const smartTotalTime = jumpTaxiEst.time + remainingTransitTime;
-           const smartTotalCost = jumpTaxiEst.cost + lastSubway.sectionTime; // Rough cost: Taxi + Subway Fare (approx 1400)
-           // Note: Subway fare is complex, let's assume standard 1500 for now or reuse base fare if simple.
-           const smartTransitCost = 1500; 
+          // Calculate Cost/Time for [Origin -> Main Station] by Taxi
+          const jumpTaxiEst = await getTaxiEstimate(startObj, { lat: String(mainStationLat), lon: String(mainStationLon) })
+            .catch(e => null);
 
-           smartOption = {
-             type: 'Smart',
-             title: 'Smart',
-             tag: '가성비 전술가',
-             time: smartTotalTime,
-             cost: jumpTaxiEst.cost + smartTransitCost,
-             description: `환승 ${bestPath.info.busTransitCount + bestPath.info.subwayTransitCount - 1}회 생략`, // Approx
-             details: `택시(${jumpTaxiEst.time}분) + ${lastSubway.lane[0].name}`,
-             badge: smartTotalTime < totalTime ? `${totalTime - smartTotalTime}분 단축` : undefined
-           };
+          if (jumpTaxiEst) {
+            let timeBeforeMain = 0;
+            for (const sub of bestPath.subPath) {
+              if (sub === lastSubway) break;
+              timeBeforeMain += sub.sectionTime;
+            }
+
+            const remainingTransitTime = totalTime - timeBeforeMain;
+            const smartTotalTime = jumpTaxiEst.time + remainingTransitTime;
+            // Base Transit Cost (approx) + Taxi Cost
+            const smartTransitCost = 1500;
+
+            smartOption = {
+              type: 'Smart',
+              title: 'Smart',
+              tag: '가성비 전술가',
+              time: smartTotalTime,
+              cost: jumpTaxiEst.cost + smartTransitCost,
+              description: `환승 ${bestPath.info.busTransitCount + bestPath.info.subwayTransitCount - 1}회 생략`,
+              details: `택시(${jumpTaxiEst.time}분) + ${lastSubway.lane[0].name}`,
+              badge: smartTotalTime < totalTime ? `${totalTime - smartTotalTime}분 단축` : undefined
+            };
+          }
         }
+      } catch (smartError) {
+        console.error("[API] Smart Logic Failed:", smartError);
+        // Don't crash entire response if smart logic fails
       }
+    } else {
+      console.warn("[API] No transit paths found from ODSay");
     }
 
-    // Fallback if Smart generation failed or isn't better
-    if (!smartOption && saverOption && vipOption) {
-        // Create a dummy Smart option if real one failed, or just omit?
-        // User requested 3 cards. If logic fails, maybe return just 2 or a modified Saver.
-        // Let's try to return what we have.
+    const availableOptions = [saverOption, smartOption, vipOption].filter(Boolean);
+
+    // If absolutely no options, return error or empty
+    if (availableOptions.length === 0) {
+      console.warn("[API] No valid options generated.");
     }
 
     return NextResponse.json({
       start: startObj.name,
       end: endObj.name,
-      options: [saverOption, smartOption, vipOption].filter(Boolean)
+      options: availableOptions
     });
 
   } catch (error) {
