@@ -222,42 +222,21 @@ export default function Home() {
         </section>
 
         {/* Results Section */}
-        {(result || isLoading) && (
+        {result && (
           <section className="animate-fade-in-up space-y-5 pb-10">
             <div className="flex items-center justify-between">
               <h2 className={`text-xl font-bold ${isNight ? 'text-gray-100' : 'text-gray-800'}`}>
-                {isLoading
-                  ? '🔍 경로를 열심히 찾는 중...'
-                  : (result?.scenario === 'day' ? '☀️ 추천 경로 (Day)' : '🌙 심야 솔루션 (Night)')}
+                {result.scenario === 'day' ? '☀️ 추천 경로 (Day)' : '🌙 심야 솔루션 (Night)'}
               </h2>
-              {!isLoading && (
-                <span className={`text-xs px-2 py-1 rounded max-w-[120px] truncate ${isNight ? 'text-gray-300 bg-gray-800' : 'text-gray-500 bg-gray-100'}`}>
-                  {destination} 도착 기준
-                </span>
-              )}
+              <span className={`text-xs px-2 py-1 rounded max-w-[120px] truncate ${isNight ? 'text-gray-300 bg-gray-800' : 'text-gray-500 bg-gray-100'}`}>
+                {destination} 도착 기준
+              </span>
             </div>
 
             <div className="grid gap-4">
-              {isLoading ? (
-                // Skeleton UI
-                [1, 2, 3].map((i) => (
-                  <div key={i} className={`relative rounded-2xl border-2 h-[200px] animate-pulse ${isNight ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-100'
-                    }`}>
-                    <div className="p-5 space-y-4">
-                      <div className={`h-5 w-20 rounded ${isNight ? 'bg-gray-800' : 'bg-gray-200'}`} />
-                      <div className="flex justify-between items-end">
-                        <div className={`h-8 w-32 rounded ${isNight ? 'bg-gray-800' : 'bg-gray-200'}`} />
-                        <div className={`h-4 w-20 rounded ${isNight ? 'bg-gray-800' : 'bg-gray-200'}`} />
-                      </div>
-                      <div className={`h-4 w-full rounded ${isNight ? 'bg-gray-800' : 'bg-gray-200'}`} />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                result?.options.map((option, idx) => (
-                  <ComparisonCard key={idx} option={option} />
-                ))
-              )}
+              {result.options.map((option, idx) => (
+                <ComparisonCard key={idx} option={option} />
+              ))}
             </div>
 
             <p className={`text-center text-xs mt-4 ${isNight ? 'text-gray-600' : 'text-gray-400'}`}>
