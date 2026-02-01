@@ -115,7 +115,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Location not found' }, { status: 404 });
     }
 
-    console.log(`[API] Searching Route: ${startObj.name} -> ${endObj.name}`);
+    // 0. Determine Dynamic Referer for ODSay/TMap Auth
+    const host = req.headers.get('host') || 'localhost:3000';
+    const protocol = req.headers.get('x-forwarded-proto') || 'http';
+    const currentReferer = `${protocol}://${host}`; // e.g. "https://waitstop-v2.vercel.app" or "http://localhost:3000"
+
+    console.log(`[API] Searching Route: ${startObj.name} -> ${endObj.name} (Ref: ${currentReferer})`);
 
     // 2. Parallel Processing: VIP (Taxi) & Saver (Transit)
     const [taxiEst, transitData] = await Promise.all([
@@ -128,7 +133,7 @@ export async function POST(req: Request) {
         SY: startObj.lat,
         EX: endObj.lon,
         EY: endObj.lat,
-      }).catch(e => {
+      }, currentReferer).catch(e => {
         console.error("[API] ODSay Check Failed:", e);
         return null;
       })
