@@ -92,58 +92,71 @@ function buildTransitOptions(transitData: any, taxiEstimate: any): { saver: Rout
         steps: parseSteps(bestPath.subPath, totalPayment)
     };
 
-    // Smart 옵션 (환승 점프 로직)
+    // Smart 옵션 (환승 점프 로직) - Scan top 5 paths for a valid "Jump"
     try {
-        const subwaySegments = bestPath.subPath.filter((p: any) => p.trafficType === 1 || p.trafficType === 2);
-        const lastSubway = subwaySegments[subwaySegments.length - 1];
+        // Iterate through paths to find one where Taxi can replace a significant "Pre-Subway" leg
+        for (const path of paths.slice(0, 5)) {
+            const subwaySegments = path.subPath.filter((p: any) => p.trafficType === 1 || p.trafficType === 2);
+            const lastSubway = subwaySegments[subwaySegments.length - 1];
 
-        if (lastSubway && taxiEstimate) {
-            // 마지막 지하철역까지의 시간 계산
+            if (!lastSubway || !taxiEstimate) continue;
+
+            // Calculate time spent BEFORE the main subway leg
             let timeBeforeMain = 0;
-            const smartSteps: any[] = [];
+            for (const sub of path.subPath) {
+                if (sub === lastSubway) break;
+                timeBeforeMain += sub.sectionTime;
+            }
 
-            // 1. Taxi Leg (Start -> Hub)
-            const jumpTaxiTime = Math.round(taxiEstimate.time * 0.4);
-            const jumpTaxiCost = Math.round(taxiEstimate.cost * 0.4);
+            // FILTER: If the "Jumpable" time is trivial (e.g., < 10 mins), it's just a walk or direct start.
+            // This prevents "Taxi to Hongik Stn" when starting at Hongik.
+            if (timeBeforeMain < 10) continue;
+
+            // Valid Candidate Found! Calculate Smart Stats
+            const jumpTaxiTime = Math.round(taxiEstimate.time * 0.4); // Rough estimate: Taxi is 40% of total direct taxi time? 
+            // Better: We should ideally estimate Taxi(Origin -> Hub). 
+            // For now, heuristic: Taxi is faster than the Pre-Main transit legs.
+            // Let's assume Taxi takes 50% of the time of the transit legs it replaces? 
+            // Or use the heuristic: "Taxi to Hub" distance is approximated.
+
+            // Refined Heuristic:
+            // The "Jump" replaces `timeBeforeMain`. 
+            // Taxi usually takes 30-50% of Bus/Walk time for the same distance.
+            const estimatedTaxiJumpTime = Math.round(timeBeforeMain * 0.5) + 3; // +3 min buffer
+            const jumpTaxiCost = Math.round(taxiEstimate.cost * (timeBeforeMain / totalTime)) + 3000; // Base fare + portion
+
+            // Build Smart Option
+            const smartSteps: any[] = [];
 
             smartSteps.push({
                 type: 'TAXI',
                 name: '택시로 점프',
-                desc: '교통 체증 구간 돌파',
-                time: jumpTaxiTime,
+                desc: '버스/도보 구간 단축',
+                time: estimatedTaxiJumpTime,
                 cost: jumpTaxiCost,
                 isTransferHub: false
             });
 
-            // 2. Transfer Hub Logic
-            const lastSubwayIdx = bestPath.subPath.indexOf(lastSubway);
-            const remainingSubPaths = bestPath.subPath.slice(lastSubwayIdx);
+            // Transfer Hub & Remaining Path
+            const lastSubwayIdx = path.subPath.indexOf(lastSubway);
+            const remainingSubPaths = path.subPath.slice(lastSubwayIdx);
 
-            // Transit Cost for Smart:
-            // Since we don't have exact partial fare, we use the original Total Payment as a safe estimate (or Upper Bound).
-            // This avoids hardcoding '1500'.
-            const smartTransitCost = totalPayment;
+            // Transit Cost (Estimated as total fare since we don't have partial)
+            const smartTransitCost = path.info.payment;
 
-            // Convert remaining subpaths to steps, assigning the transit cost to the first one
             const transitSteps = parseSteps(remainingSubPaths, smartTransitCost);
-
-            // Mark the first transit step (Subway) as the HUB
             if (transitSteps.length > 0) {
                 transitSteps[0].isTransferHub = true;
-                transitSteps[0].desc = "여기서 택시를 내려 갈아타세요"; // Updated text
-                transitSteps[0].name = `${remainingSubPaths[0].startName}역 (환승)`; // Bold hint in name
+                transitSteps[0].desc = "여기서 택시를 내려 갈아타세요";
+                transitSteps[0].name = `${remainingSubPaths[0].startName || '환승역'} (환승)`;
             }
-
             smartSteps.push(...transitSteps);
 
-            // Recalculate Total Smart Time
-            const smartTotalTime = jumpTaxiTime + remainingSubPaths.reduce((acc: number, cur: any) => acc + cur.sectionTime, 0);
-
-            // Total Cost = Taxi Portion + Transit Portion
+            const smartTotalTime = estimatedTaxiJumpTime + remainingSubPaths.reduce((acc: number, cur: any) => acc + cur.sectionTime, 0);
             const smartTotalCost = jumpTaxiCost + smartTransitCost;
-
             const timeSaved = totalTime - smartTotalTime;
 
+            // Construct the option and break (we found our Smart Route)
             smartOption = {
                 type: 'smart',
                 label: 'Smart',
@@ -151,11 +164,13 @@ function buildTransitOptions(transitData: any, taxiEstimate: any): { saver: Rout
                 cost: smartTotalCost,
                 transportation: [],
                 tag: '가성비 전술가',
-                description: `환승 ${Math.max(0, transferCount - 1)}회 생략`,
-                details: `택시(${jumpTaxiTime}분) + ${lastSubway.lane?.[0]?.name || '지하철'}`,
+                description: `환승 ${Math.max(0, path.info.busTransitCount + path.info.subwayTransitCount - 1)}회 생략`,
+                details: `택시(${estimatedTaxiJumpTime}분) + ${lastSubway.lane?.[0]?.name || '지하철'}`,
                 badge: timeSaved > 0 ? `${timeSaved}분 단축` : undefined,
                 steps: smartSteps
             };
+
+            break; // Found a valid Smart option, stop looking.
         }
     } catch (e) {
         console.error('Smart option build failed:', e);
