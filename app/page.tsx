@@ -255,7 +255,8 @@ export default function Home() {
                 : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
                 }`}
               value={origin}
-              onChange={(e) => setOrigin(e.target.value)}
+              onChange={(e) => { setOrigin(e.target.value); setShowOriginList(true); }}
+              onFocus={() => setShowOriginList(true)}
             />
             <button
               onClick={handleCurrentLocation}
@@ -264,6 +265,28 @@ export default function Home() {
             >
               <Crosshair className="h-5 w-5" />
             </button>
+
+            {/* Origin Dropdown */}
+            {showOriginList && originSuggestions.length > 0 && (
+              <ul className={`absolute z-50 w-full mt-1 rounded-xl shadow-lg max-h-60 overflow-y-auto border ${isNight ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-100'
+                }`}>
+                {originSuggestions.map((place, idx) => (
+                  <li
+                    key={idx}
+                    onClick={() => handleSelectPlace(place, true)}
+                    className={`p-3 cursor-pointer border-b last:border-none flex flex-col hover:bg-opacity-10 ${isNight
+                        ? 'border-gray-800 hover:bg-violet-500 text-gray-200'
+                        : 'border-gray-50 hover:bg-indigo-50 text-gray-800'
+                      }`}
+                  >
+                    <span className="font-bold text-sm">{place.place_name}</span>
+                    <span className={`text-xs ${isNight ? 'text-gray-500' : 'text-gray-400'}`}>
+                      {place.road_address_name || place.address_name}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="relative">
@@ -278,9 +301,32 @@ export default function Home() {
                 : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
                 }`}
               value={destination}
-              onChange={(e) => setDestination(e.target.value)}
+              onChange={(e) => { setDestination(e.target.value); setShowDestList(true); }}
+              onFocus={() => setShowDestList(true)}
               onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
             />
+
+            {/* Destination Dropdown */}
+            {showDestList && destSuggestions.length > 0 && (
+              <ul className={`absolute z-50 w-full mt-1 rounded-xl shadow-lg max-h-60 overflow-y-auto border ${isNight ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-100'
+                }`}>
+                {destSuggestions.map((place, idx) => (
+                  <li
+                    key={idx}
+                    onClick={() => handleSelectPlace(place, false)}
+                    className={`p-3 cursor-pointer border-b last:border-none flex flex-col hover:bg-opacity-10 ${isNight
+                        ? 'border-gray-800 hover:bg-violet-500 text-gray-200'
+                        : 'border-gray-50 hover:bg-indigo-50 text-gray-800'
+                      }`}
+                  >
+                    <span className="font-bold text-sm">{place.place_name}</span>
+                    <span className={`text-xs ${isNight ? 'text-gray-500' : 'text-gray-400'}`}>
+                      {place.road_address_name || place.address_name}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <button
