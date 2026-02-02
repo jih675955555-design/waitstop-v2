@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { MapPin, Navigation, Loader2, Crosshair, Sun, Moon } from 'lucide-react';
 import { Recommendation } from '../lib/mockData';
-import { fetchRoutes, getReverseGeo } from '../lib/api';
+import { fetchRoutes } from '../lib/api';
 import ComparisonCard from '../components/ComparisonCard';
 import BottomNav from '../components/BottomNav';
 import Toast from '../components/Toast';
@@ -52,7 +52,7 @@ export default function Home() {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
 
-  // Coordinates State (Kakao provides these directly)
+  // Coordinates State
   const [startPoint, setStartPoint] = useState<{ name: string, lat: number, lon: number } | null>(null);
   const [endPoint, setEndPoint] = useState<{ name: string, lat: number, lon: number } | null>(null);
 
@@ -69,9 +69,51 @@ export default function Home() {
   const [showOriginList, setShowOriginList] = useState(false);
   const [showDestList, setShowDestList] = useState(false);
 
+  // Kakao SDK 로드 상태
+  const [isKakaoLoaded, setIsKakaoLoaded] = useState(false);
+
+  // Kakao SDK 로드 확인
+  useEffect(() => {
+    const checkKakao = () => {
+      if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
+        setIsKakaoLoaded(true);
+        console.log('Kakao SDK ready');
+        return true;
+      }
+      return false;
+    };
+
+    // 이미 로드되었는지 확인
+    if (checkKakao()) return;
+
+    // 로드될 때까지 대기
+    const interval = setInterval(() => {
+      if (checkKakao()) {
+        clearInterval(interval);
+      }
+    }, 100);
+
+    // 10초 후 타임아웃
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      if (!isKakaoLoaded) {
+        console.error('Kakao SDK load timeout');
+      }
+    }, 10000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, []);
+
   // Kakao Places Search
   const searchPlaces = (keyword: string, setSuggestions: (data: any[]) => void) => {
-    if (!window.kakao || !window.kakao.maps || !window.kakao.maps.services) return;
+    if (!isKakaoLoaded || !window.kakao?.maps?.services) {
+      console.warn('Kakao SDK not ready');
+      return;
+    }
+    
     const ps = new window.kakao.maps.services.Places();
 
     ps.keywordSearch(keyword, (data: any, status: any) => {
@@ -84,6 +126,8 @@ export default function Home() {
   };
 
   useEffect(() => {
+    if (!isKakaoLoaded) return;
+    
     const timer = setTimeout(() => {
       if (origin.length > 1) {
         searchPlaces(origin, (data) => {
@@ -96,9 +140,11 @@ export default function Home() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [origin]);
+  }, [origin, isKakaoLoaded]);
 
   useEffect(() => {
+    if (!isKakaoLoaded) return;
+    
     const timer = setTimeout(() => {
       if (destination.length > 1) {
         searchPlaces(destination, (data) => {
@@ -111,7 +157,7 @@ export default function Home() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [destination]);
+  }, [destination, isKakaoLoaded]);
 
   const handleSelectPlace = (place: any, isOrigin: boolean) => {
     const point = {
@@ -129,7 +175,6 @@ export default function Home() {
       setShowDestList(false);
     }
   };
-
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -157,12 +202,16 @@ export default function Home() {
   };
 
   const handleCurrentLocation = () => {
+    if (!isKakaoLoaded) {
+      triggerToast('지도 서비스 로딩 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+
     if (navigator.geolocation && window.kakao && window.kakao.maps) {
       navigator.geolocation.getCurrentPosition((pos) => {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
 
-        // Geocoder for address
         const geocoder = new window.kakao.maps.services.Geocoder();
         geocoder.coord2Address(lon, lat, (result: any, status: any) => {
           if (status === window.kakao.maps.services.Status.OK) {
@@ -182,7 +231,7 @@ export default function Home() {
     }
   };
 
-  const handleAnalyze = async () => { // Renamed from handleSearch to match original
+  const handleAnalyze = async () => {
     if (!startPoint || !endPoint) {
       triggerToast('출발지와 목적지를 리스트에서 선택해주세요.');
       return;
@@ -194,9 +243,8 @@ export default function Home() {
     const scenario = isNight ? 'night' : 'day';
 
     try {
-      // Pass Lat/Lon directly
       const data = await fetchRoutes({
-        origin: startPoint.name,      // Just for display logic if needed
+        origin: startPoint.name,
         destination: endPoint.name,
         startLat: startPoint.lat,
         startLon: startPoint.lon,
@@ -216,7 +264,7 @@ export default function Home() {
 
     } catch (err) {
       console.error(err);
-      triggerToast('경로를 찾을 수 없습니다.'); // Updated error message
+      triggerToast('경로를 찾을 수 없습니다.');
     } finally {
       setIsLoading(false);
     }
@@ -224,7 +272,6 @@ export default function Home() {
 
   const renderHome = () => (
     <div className={`flex flex-col h-full min-h-[calc(100vh-64px)] overflow-y-auto pb-20 no-scrollbar transition-colors duration-300 ${isNight ? 'bg-black' : 'bg-white'}`}>
-      {/* Header with Direct Toggle Button */}
       <header className={`px-6 py-6 flex justify-between items-center sticky top-0 z-20 transition-colors duration-300 ${isNight ? 'bg-black' : 'bg-white'}`}>
         <div>
           <h1 className={`text-2xl font-black tracking-tighter ${isNight ? 'text-violet-400' : 'text-indigo-600'}`}>
@@ -240,8 +287,6 @@ export default function Home() {
       </header>
 
       <div className="px-6 flex-1">
-
-        {/* Input Section */}
         <section className="space-y-3 mt-4 mb-8">
           <div className="relative">
             <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
@@ -249,34 +294,34 @@ export default function Home() {
             </div>
             <input
               type="text"
-              placeholder="출발지"
+              placeholder={isKakaoLoaded ? "출발지" : "지도 로딩 중..."}
+              disabled={!isKakaoLoaded}
               className={`w-full pl-10 pr-12 py-3.5 rounded-xl border shadow-sm transition-all outline-none ${isNight
                 ? 'border-gray-800 bg-gray-900 text-white placeholder-gray-400 focus:ring-2 focus:ring-violet-500'
                 : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
-                }`}
+                } ${!isKakaoLoaded ? 'opacity-50' : ''}`}
               value={origin}
               onChange={(e) => { setOrigin(e.target.value); setShowOriginList(true); }}
               onFocus={() => setShowOriginList(true)}
             />
             <button
               onClick={handleCurrentLocation}
-              className={`absolute inset-y-0 right-3 flex items-center transition-colors p-2 ${isNight ? 'text-gray-400 hover:text-violet-400' : 'text-gray-400 hover:text-indigo-500'}`}
+              disabled={!isKakaoLoaded}
+              className={`absolute inset-y-0 right-3 flex items-center transition-colors p-2 ${isNight ? 'text-gray-400 hover:text-violet-400' : 'text-gray-400 hover:text-indigo-500'} ${!isKakaoLoaded ? 'opacity-50' : ''}`}
               aria-label="Use current location"
             >
               <Crosshair className="h-5 w-5" />
             </button>
 
-            {/* Origin Dropdown */}
             {showOriginList && originSuggestions.length > 0 && (
-              <ul className={`absolute z-50 w-full mt-1 rounded-xl shadow-lg max-h-60 overflow-y-auto border ${isNight ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-100'
-                }`}>
+              <ul className={`absolute z-50 w-full mt-1 rounded-xl shadow-lg max-h-60 overflow-y-auto border ${isNight ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-100'}`}>
                 {originSuggestions.map((place, idx) => (
                   <li
                     key={idx}
                     onClick={() => handleSelectPlace(place, true)}
                     className={`p-3 cursor-pointer border-b last:border-none flex flex-col hover:bg-opacity-10 ${isNight
-                        ? 'border-gray-800 hover:bg-violet-500 text-gray-200'
-                        : 'border-gray-50 hover:bg-indigo-50 text-gray-800'
+                      ? 'border-gray-800 hover:bg-violet-500 text-gray-200'
+                      : 'border-gray-50 hover:bg-indigo-50 text-gray-800'
                       }`}
                   >
                     <span className="font-bold text-sm">{place.place_name}</span>
@@ -295,28 +340,27 @@ export default function Home() {
             </div>
             <input
               type="text"
-              placeholder="어디로 가시나요?"
+              placeholder={isKakaoLoaded ? "어디로 가시나요?" : "지도 로딩 중..."}
+              disabled={!isKakaoLoaded}
               className={`w-full pl-10 pr-4 py-3.5 rounded-xl border shadow-sm transition-all outline-none font-medium ${isNight
                 ? 'border-gray-800 bg-gray-900 text-white placeholder-gray-400 focus:ring-2 focus:ring-violet-500'
                 : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
-                }`}
+                } ${!isKakaoLoaded ? 'opacity-50' : ''}`}
               value={destination}
               onChange={(e) => { setDestination(e.target.value); setShowDestList(true); }}
               onFocus={() => setShowDestList(true)}
               onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
             />
 
-            {/* Destination Dropdown */}
             {showDestList && destSuggestions.length > 0 && (
-              <ul className={`absolute z-50 w-full mt-1 rounded-xl shadow-lg max-h-60 overflow-y-auto border ${isNight ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-100'
-                }`}>
+              <ul className={`absolute z-50 w-full mt-1 rounded-xl shadow-lg max-h-60 overflow-y-auto border ${isNight ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-100'}`}>
                 {destSuggestions.map((place, idx) => (
                   <li
                     key={idx}
                     onClick={() => handleSelectPlace(place, false)}
                     className={`p-3 cursor-pointer border-b last:border-none flex flex-col hover:bg-opacity-10 ${isNight
-                        ? 'border-gray-800 hover:bg-violet-500 text-gray-200'
-                        : 'border-gray-50 hover:bg-indigo-50 text-gray-800'
+                      ? 'border-gray-800 hover:bg-violet-500 text-gray-200'
+                      : 'border-gray-50 hover:bg-indigo-50 text-gray-800'
                       }`}
                   >
                     <span className="font-bold text-sm">{place.place_name}</span>
@@ -331,7 +375,7 @@ export default function Home() {
 
           <button
             onClick={handleAnalyze}
-            disabled={isLoading}
+            disabled={isLoading || !isKakaoLoaded}
             className={`w-full min-h-[54px] text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-70 disabled:active:scale-100 ${isNight
               ? 'bg-violet-600 hover:bg-violet-700'
               : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
@@ -351,7 +395,6 @@ export default function Home() {
           </button>
         </section>
 
-        {/* Results Section */}
         {result && (
           <section className="animate-fade-in-up space-y-5 pb-10">
             <div className="flex items-center justify-between">
@@ -445,7 +488,6 @@ export default function Home() {
     </div>
   );
 
-  // [Wrapper Logic]
   return (
     <main className={`h-full min-h-screen transition-colors duration-300 ${isNight ? 'bg-black text-white' : 'bg-white text-black'}`}>
       {activeTab === 'home' && renderHome()}
