@@ -101,45 +101,51 @@ export default function ComparisonCard({ option }: ComparisonCardProps) {
             >
                 {option.steps && option.steps.length > 0 ? (
                     <div className="relative pl-2 ml-1 space-y-0">
-                        {/* Vertical Line */}
-                        <div className="absolute top-2 bottom-4 left-[15px] w-0.5 bg-gray-200 dark:bg-gray-700"></div>
+                        {/* Vertical Line - Themed Color */}
+                        <div className={`absolute top-2 bottom-4 left-[15px] w-0.5 ${isSmart ? 'bg-indigo-200 dark:bg-indigo-900' :
+                                isVIP ? 'bg-yellow-200 dark:bg-yellow-900' :
+                                    'bg-green-200 dark:bg-green-900'
+                            }`}></div>
 
                         {option.steps.map((step, idx) => (
-                            <div key={idx} className={`relative flex gap-4 pb-6 last:pb-0 ${step.isTransferHub ? 'bg-indigo-50/80 dark:bg-indigo-900/30 p-3 rounded-xl border border-indigo-100 dark:border-indigo-500/30 -ml-2' : ''
+                            <div key={idx} className={`relative flex gap-4 pb-6 last:pb-0 ${step.isTransferHub ? 'bg-indigo-50/80 dark:bg-indigo-900/40 p-3 rounded-xl border border-indigo-200 dark:border-indigo-500/50 -ml-2 shadow-sm' : ''
                                 }`}>
                                 {/* Icon Bubble */}
-                                <div className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center shrink-0 border-2 ${step.type === 'TAXI' ? 'bg-yellow-100 border-yellow-400 text-yellow-700' :
-                                        step.type === 'SUBWAY' ? 'bg-violet-100 border-violet-400 text-violet-700' :
-                                            step.type === 'BUS' ? 'bg-blue-100 border-blue-400 text-blue-700' :
-                                                'bg-gray-100 border-gray-300 text-gray-500' // Walk
+                                <div className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center shrink-0 border-2 bg-white dark:bg-gray-800 ${isSmart ? 'border-indigo-400 text-indigo-600' :
+                                        isVIP ? 'border-yellow-400 text-yellow-600' :
+                                            'border-green-400 text-green-600'
                                     }`}>
                                     {step.type === 'TAXI' && <Crown className="w-3.5 h-3.5" />}
                                     {step.type === 'SUBWAY' && <Zap className="w-3.5 h-3.5" />}
                                     {step.type === 'BUS' && <Leaf className="w-3.5 h-3.5" />}
-                                    {step.type === 'WALK' && <div className="w-1.5 h-1.5 rounded-full bg-current" />}
+                                    {step.type === 'WALK' && <div className={`w-1.5 h-1.5 rounded-full ${isSmart ? 'bg-indigo-400' : isVIP ? 'bg-yellow-400' : 'bg-green-400'
+                                        }`} />}
                                 </div>
 
                                 {/* Content */}
                                 <div className="flex-1 min-w-0">
                                     <div className="flex justify-between items-start">
-                                        <p className={`text-sm font-bold ${step.isTransferHub ? 'text-indigo-700 dark:text-indigo-300 text-base' : 'text-gray-800 dark:text-gray-200'
+                                        <p className={`text-sm ${step.isTransferHub ? 'font-black text-indigo-800 dark:text-indigo-200 text-base' : 'font-bold text-gray-800 dark:text-gray-200'
                                             }`}>
                                             {step.name}
                                         </p>
                                         {step.time && <span className="text-xs font-mono text-gray-500">{step.time}분</span>}
                                     </div>
-                                    <p className={`text-xs mt-0.5 ${step.isTransferHub ? 'text-indigo-600 dark:text-indigo-400 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+                                    <p className={`text-xs mt-0.5 ${step.isTransferHub ? 'text-indigo-700 dark:text-indigo-300 font-bold' : 'text-gray-500 dark:text-gray-400'}`}>
                                         {step.desc}
                                     </p>
 
-                                    {/* Cost Tag */}
-                                    {step.cost && step.cost > 0 && (
+                                    {/* Cost Tag (Only if > 0) */}
+                                    {step.cost && step.cost > 0 ? (
                                         <div className="mt-1">
-                                            <span className="text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded">
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${isSmart ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' :
+                                                    isVIP ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
+                                                        'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                                                }`}>
                                                 {step.cost.toLocaleString()}원
                                             </span>
                                         </div>
-                                    )}
+                                    ) : null}
                                 </div>
                             </div>
                         ))}

@@ -33,6 +33,7 @@ function buildTransitOptions(transitData: any, taxiEstimate: any): { saver: Rout
 
     const paths = transitData?.result?.path;
     if (!paths || paths.length === 0) {
+        console.warn('No transit paths found');
         return { saver: null, smart: null };
     }
 
@@ -42,11 +43,14 @@ function buildTransitOptions(transitData: any, taxiEstimate: any): { saver: Rout
     const transferCount = bestPath.info.busTransitCount + bestPath.info.subwayTransitCount;
 
     // --- Helper to parse SubPath into Steps ---
-    const parseSteps = (subPaths: any[]): any[] => {
+    const parseSteps = (subPaths: any[], totalRefFare: number): any[] => {
+        let fareAssigned = false;
+
         return subPaths.map(p => {
             let type = 'WALK';
             let name = p.sectionTime + '분 걷기';
             let desc = '도보 이동';
+            let stepCost = 0; // Default 0 for WALK
 
             if (p.trafficType === 1) { // Subway
                 type = 'SUBWAY';
@@ -58,12 +62,19 @@ function buildTransitOptions(transitData: any, taxiEstimate: any): { saver: Rout
                 desc = `${p.stationCount}개 정류장 이동`;
             }
 
+            // Assign Total Fare to the FIRST Transit Step (Bus/Subway)
+            // Treat transfers as 0 (Free Transfer system)
+            if ((type === 'SUBWAY' || type === 'BUS') && !fareAssigned) {
+                stepCost = totalRefFare;
+                fareAssigned = true;
+            }
+
             return {
                 type,
                 name,
                 desc,
                 time: p.sectionTime,
-                cost: p.sectionTime * 50 // Dummy incremental cost visualization? Or omit
+                cost: stepCost
             };
         });
     };
@@ -78,7 +89,7 @@ function buildTransitOptions(transitData: any, taxiEstimate: any): { saver: Rout
         tag: '지갑 수호자',
         description: '최저가 이동',
         details: `환승 ${transferCount}회`,
-        steps: parseSteps(bestPath.subPath)
+        steps: parseSteps(bestPath.subPath, totalPayment)
     };
 
     // Smart 옵션 (환승 점프 로직)
@@ -104,41 +115,40 @@ function buildTransitOptions(transitData: any, taxiEstimate: any): { saver: Rout
                 isTransferHub: false
             });
 
-            // 2. Transfer Hub (Highlight)
-            // Add a virtual step or mark the next step?
-            // Let's mark the start of the Subway leg as the Hub interaction.
-
-            const remainingTransitTime = totalTime - timeBeforeMain;
-            // Note: timeBeforeMain calculation needs to match the skipping logic below.
-
-            // Logic: Skip all steps BEFORE the lastSubway.
-            // Then add lastSubway step.
-
-            // Find the subPath index of lastSubway
+            // 2. Transfer Hub Logic
             const lastSubwayIdx = bestPath.subPath.indexOf(lastSubway);
-            // Steps from lastSubway onwards
             const remainingSubPaths = bestPath.subPath.slice(lastSubwayIdx);
 
-            // Convert remaining subpaths to steps
-            const transitSteps = parseSteps(remainingSubPaths);
+            // Transit Cost for Smart:
+            // Since we don't have exact partial fare, we use the original Total Payment as a safe estimate (or Upper Bound).
+            // This avoids hardcoding '1500'.
+            const smartTransitCost = totalPayment;
 
-            // Mark the first transit step (which is the subway) as the HUB
+            // Convert remaining subpaths to steps, assigning the transit cost to the first one
+            const transitSteps = parseSteps(remainingSubPaths, smartTransitCost);
+
+            // Mark the first transit step (Subway) as the HUB
             if (transitSteps.length > 0) {
                 transitSteps[0].isTransferHub = true;
-                transitSteps[0].desc = "여기서 환승하세요! (택시 하차)";
+                transitSteps[0].desc = "여기서 택시를 내려 갈아타세요"; // Updated text
+                transitSteps[0].name = `${remainingSubPaths[0].startName}역 (환승)`; // Bold hint in name
             }
 
             smartSteps.push(...transitSteps);
 
+            // Recalculate Total Smart Time
             const smartTotalTime = jumpTaxiTime + remainingSubPaths.reduce((acc: number, cur: any) => acc + cur.sectionTime, 0);
-            const smartTransitCost = 1500;
+
+            // Total Cost = Taxi Portion + Transit Portion
+            const smartTotalCost = jumpTaxiCost + smartTransitCost;
+
             const timeSaved = totalTime - smartTotalTime;
 
             smartOption = {
                 type: 'smart',
                 label: 'Smart',
                 duration: smartTotalTime,
-                cost: jumpTaxiCost + smartTransitCost,
+                cost: smartTotalCost,
                 transportation: [],
                 tag: '가성비 전술가',
                 description: `환승 ${Math.max(0, transferCount - 1)}회 생략`,
@@ -200,16 +210,7 @@ export async function fetchRoutes({ origin, destination, scenario }: FetchRoutes
                 transportation: [],
                 tag: '리치 모드',
                 description: '프라이빗하고 편안한 이동',
-                details: `택시 이동 약 ${taxiEstimate.time}분`,
-                steps: [
-                    {
-                        type: 'TAXI',
-                        name: '택시 탑승',
-                        desc: '목적지까지 논스톱 이동',
-                        time: taxiEstimate.time,
-                        cost: taxiEstimate.cost
-                    }
-                ]
+                details: `택시 이동 약 ${taxiEstimate.time}분`
             });
         }
 
