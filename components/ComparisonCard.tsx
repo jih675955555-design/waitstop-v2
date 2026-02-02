@@ -40,8 +40,8 @@ export default function ComparisonCard({ option }: ComparisonCardProps) {
             {/* Tag / Badge */}
             {option.tag && (
                 <div className={`absolute top-0 right-0 text-[10px] font-bold px-3 py-1.5 rounded-bl-xl shadow-sm z-10 ${isSmart ? 'bg-indigo-600 dark:bg-violet-600 text-white animate-pulse' :
-                        isVIP ? 'bg-yellow-500 text-black' :
-                            'bg-green-600 text-white'
+                    isVIP ? 'bg-yellow-500 text-black' :
+                        'bg-green-600 text-white'
                     }`}>
                     {option.tag}
                 </div>
@@ -94,22 +94,61 @@ export default function ComparisonCard({ option }: ComparisonCardProps) {
                 </div>
             </div>
 
-            {/* Expandable Section (Simplified for now as route steps might be complex) */}
+            {/* Expandable Section: Detailed Steps */}
             <div
-                className={`bg-white/50 dark:bg-black/20 backdrop-blur-sm transition-all duration-300 ease-in-out ${isOpen ? 'max-h-40 opacity-100 p-4 border-t border-gray-100 dark:border-white/10' : 'max-h-0 opacity-0 p-0 border-none'
+                className={`bg-white/50 dark:bg-black/20 backdrop-blur-sm transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-[500px] opacity-100 p-4 border-t border-gray-100 dark:border-white/10' : 'max-h-0 opacity-0 p-0 border-none'
                     }`}
             >
-                <div className="text-sm text-gray-600 dark:text-gray-300">
-                    {/* Placeholder for detailed step visualization */}
-                    <p className="mb-2 font-bold opacity-80">상세 경로</p>
-                    <p className="text-xs opacity-70">
-                        {option.type === 'smart'
-                            ? '택시로 환승 지점까지 빠르게 이동 후, 지하철로 갈아탑니다.'
-                            : option.type === 'vip'
-                                ? '출발지에서 목적지까지 편안하게 택시로 이동합니다.'
-                                : '가장 저렴한 대중교통 경로를 이용합니다.'}
-                    </p>
-                </div>
+                {option.steps && option.steps.length > 0 ? (
+                    <div className="relative pl-2 ml-1 space-y-0">
+                        {/* Vertical Line */}
+                        <div className="absolute top-2 bottom-4 left-[15px] w-0.5 bg-gray-200 dark:bg-gray-700"></div>
+
+                        {option.steps.map((step, idx) => (
+                            <div key={idx} className={`relative flex gap-4 pb-6 last:pb-0 ${step.isTransferHub ? 'bg-indigo-50/80 dark:bg-indigo-900/30 p-3 rounded-xl border border-indigo-100 dark:border-indigo-500/30 -ml-2' : ''
+                                }`}>
+                                {/* Icon Bubble */}
+                                <div className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center shrink-0 border-2 ${step.type === 'TAXI' ? 'bg-yellow-100 border-yellow-400 text-yellow-700' :
+                                        step.type === 'SUBWAY' ? 'bg-violet-100 border-violet-400 text-violet-700' :
+                                            step.type === 'BUS' ? 'bg-blue-100 border-blue-400 text-blue-700' :
+                                                'bg-gray-100 border-gray-300 text-gray-500' // Walk
+                                    }`}>
+                                    {step.type === 'TAXI' && <Crown className="w-3.5 h-3.5" />}
+                                    {step.type === 'SUBWAY' && <Zap className="w-3.5 h-3.5" />}
+                                    {step.type === 'BUS' && <Leaf className="w-3.5 h-3.5" />}
+                                    {step.type === 'WALK' && <div className="w-1.5 h-1.5 rounded-full bg-current" />}
+                                </div>
+
+                                {/* Content */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-start">
+                                        <p className={`text-sm font-bold ${step.isTransferHub ? 'text-indigo-700 dark:text-indigo-300 text-base' : 'text-gray-800 dark:text-gray-200'
+                                            }`}>
+                                            {step.name}
+                                        </p>
+                                        {step.time && <span className="text-xs font-mono text-gray-500">{step.time}분</span>}
+                                    </div>
+                                    <p className={`text-xs mt-0.5 ${step.isTransferHub ? 'text-indigo-600 dark:text-indigo-400 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+                                        {step.desc}
+                                    </p>
+
+                                    {/* Cost Tag */}
+                                    {step.cost && step.cost > 0 && (
+                                        <div className="mt-1">
+                                            <span className="text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded">
+                                                {step.cost.toLocaleString()}원
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-sm text-center text-gray-400 py-2">
+                        상세 경로 정보가 없습니다.
+                    </div>
+                )}
             </div>
         </div>
     );
