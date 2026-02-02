@@ -1,13 +1,6 @@
+```typescript
 import { NextResponse } from 'next/server';
 
-// API Keys
-const TMAP_KEY = process.env.NEXT_PUBLIC_WAITSTOP_API_KEY || process.env.NEXT_PUBLIC_TMAP_API_KEY || '';
-
-// Types
-type RouteRequest = {
-  origin: string;
-  destination: string;
-};
 
 // --- Helper Functions ---
 
@@ -35,7 +28,7 @@ async function fetchTMap(endpoint: string, params: Record<string, any>, method =
       return null;
     }
     const text = await res.text();
-    console.error(`TMAP Error (${endpoint}): ${res.status} ${text}`);
+    console.error(`TMAP Error(${ endpoint }): ${ res.status } ${ text } `);
     return null;
   }
   return res.json();
@@ -93,7 +86,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Location not found' }, { status: 404 });
     }
 
-    console.log(`[API] Route: ${startObj.name} -> ${endObj.name}`);
+    console.log(`[API] Route: ${ startObj.name } -> ${ endObj.name } `);
 
     // 2. 택시 예상 정보 가져오기
     const taxiEst = await getTaxiEstimate(startObj, endObj).catch(e => {
