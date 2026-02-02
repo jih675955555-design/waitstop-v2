@@ -180,10 +180,12 @@ export default function Home() {
     if (isOrigin) {
       setOrigin(place.place_name);
       setStartPoint(point);
+      setOriginSuggestions([]);  // 목록 비우기
       setShowOriginList(false);
     } else {
       setDestination(place.place_name);
       setEndPoint(point);
+      setDestSuggestions([]);  // 목록 비우기
       setShowDestList(false);
     }
   };
@@ -313,8 +315,9 @@ export default function Home() {
                 : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
                 } ${!isKakaoLoaded ? 'opacity-50' : ''}`}
               value={origin}
-              onChange={(e) => { setOrigin(e.target.value); setShowOriginList(true); }}
-              onFocus={() => setShowOriginList(true)}
+              onChange={(e) => { setOrigin(e.target.value); setStartPoint(null); setShowOriginList(true); }}
+              onFocus={() => originSuggestions.length > 0 && setShowOriginList(true)}
+              onBlur={() => setTimeout(() => setShowOriginList(false), 200)}
             />
             <button
               onClick={handleCurrentLocation}
@@ -359,8 +362,9 @@ export default function Home() {
                 : 'border-gray-200 bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500'
                 } ${!isKakaoLoaded ? 'opacity-50' : ''}`}
               value={destination}
-              onChange={(e) => { setDestination(e.target.value); setShowDestList(true); }}
-              onFocus={() => setShowDestList(true)}
+              onChange={(e) => { setDestination(e.target.value); setEndPoint(null); setShowDestList(true); }}
+              onFocus={() => destSuggestions.length > 0 && setShowDestList(true)}
+              onBlur={() => setTimeout(() => setShowDestList(false), 200)}
               onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
             />
 
