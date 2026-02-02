@@ -128,6 +128,12 @@ export default function Home() {
   useEffect(() => {
     if (!isKakaoLoaded) return;
     
+    // 이미 선택된 장소면 검색하지 않음
+    if (startPoint && origin === startPoint.name) {
+      setShowOriginList(false);
+      return;
+    }
+    
     const timer = setTimeout(() => {
       if (origin.length > 1) {
         searchPlaces(origin, (data) => {
@@ -140,10 +146,16 @@ export default function Home() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [origin, isKakaoLoaded]);
+  }, [origin, isKakaoLoaded, startPoint]);
 
   useEffect(() => {
     if (!isKakaoLoaded) return;
+    
+    // 이미 선택된 장소면 검색하지 않음
+    if (endPoint && destination === endPoint.name) {
+      setShowDestList(false);
+      return;
+    }
     
     const timer = setTimeout(() => {
       if (destination.length > 1) {
@@ -157,7 +169,7 @@ export default function Home() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [destination, isKakaoLoaded]);
+  }, [destination, isKakaoLoaded, endPoint]);
 
   const handleSelectPlace = (place: any, isOrigin: boolean) => {
     const point = {
